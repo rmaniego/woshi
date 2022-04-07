@@ -1,9 +1,9 @@
 # woshi
 On-the-go HTML Abstraction and Generator for Python.
 
-You're protoyping the next big thing and definitely writing the perfect HTML file is not on the priority.
+You're prototyping the next big thing and definitely writing the perfect HTML file is not on the priority.
 
-**Woshi** let's you create HTML documents on the go and inside your Python scripts. It is built on top of **lxml.html** plus with another level of abstraction, so you can code with no trouble of messing up with closing tags--it is so quick and easy!
+**Woshi** lets you create HTML documents on the go and inside your Python scripts. It is built on top of **lxml.html** plus with another level of abstraction, so you can code with no trouble of messing up with closing tags--it is so quick and easy!
 
 Here's a sample syntax:
 ```python
@@ -16,9 +16,7 @@ And scroll down below for more examples.
 
 `pip install -U woshi`
 
-Current version is 1.0, but more updates are coming soon.
-
-This is compatible with Python 3.9+, but will require other third-party libraries during installation.
+Current version is 1.0, but more updates are coming soon. It is compatible with Python 3.9+, but will require other third-party libraries during installation.
 
 
 ## Usage
@@ -33,12 +31,12 @@ page = Woshi()
 page = Woshi("home.html")
 ```
 
-**Import Package**
+**Creating elements with an inner text**
 ```python
 page["head"] = "title > Woshi v1.0"
 ```
 
-**Import Package**
+**Creating other elements**
 Basically, you set the parent selector to append the new element.
 ```python
 # create container box
@@ -47,7 +45,7 @@ page["#content"] = "div #box.container.light"
 
 # create the popup text
 page["#box"] = "div #title.header > Woshi"
-page["#box"] = "div .message data-default='Lorem impsum...' > Hello, world!"
+page["#box"] = "div .message data-default='Lorem ipsum...' > Hello, world!"
 
 # populate the action buttons
 page["#box"] = "div #action.btn-list"
@@ -72,7 +70,7 @@ for element in page["button"]:
 
 **Yield all matches as HTML string**
 ```python
-for element in page.get("button", to_string=True, to_xml=True):
+for element in page.get("button", to_string=True):
     print(element)
 ```
 

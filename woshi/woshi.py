@@ -7,18 +7,17 @@ import re
 import time
 import shlex
 import threading
-import lxml.html as e3
+from io import StringIO
+import lxml.etree as e3
 from xml.dom import minidom
 from arkivist import Arkivist
 from .constants import html5, core_attributes, event_handlers, css3_properties
-
 
 class Woshi:
     def __init__(self, filepath=None, html=None):
         self.filepath = None
         if filepath is None:
             self.filepath = filepath
-        self.header = "<!DOCTYPE html>"
         self.html = _to_html_object(html)
         self.lock = threading.RLock()
 
@@ -30,25 +29,39 @@ class Woshi:
             properties = _decode_ftml(ftml)
             if len(properties):
                 rules = properties.get("rules", {})
+                action = properties.get("action", "prop")
                 if rules.get("xpath", 1):
                     xpath = _parse_selector(xpath)
+                if xpath == "html" and action == "prop":
+                    for child in self.html.getroot():
+                        parent = child.getparent()
+                        if parent.tag == "html":
+                            attributes = properties.get("attributes", {})
+                            for key, value in attributes.items():
+                                parent.set(key, value)
                 for match in self.html.findall(xpath):
-                    if properties.get("action", "prop") == "prop":
-                        for key, value in properties.get("attributes", {}).items():
+                    if action == "prop":
+                        attributes = properties.get("attributes", {})
+                        for key, value in attributes.items():
                             match.set(key, value)
                     else:
-                        element = _to_html_object(_new_element(properties, match.tag), properties["tag"])
+                        tag = properties["tag"]
+                        element = _to_html_object(_new_element(properties, match.tag), tag)
                         if element is None:
                             break
-                        if rules.get("static", 0):
-                            if (tag:=properties["tag"]) in ("link", "img", "script"):
+                        static = rules.get("static", 0)
+                        if static:
+                            if tag in ("link", "img", "script"):
                                 attr = "href"
                                 if tag in ("img", "script"):
                                     attr = "src"
-                                for item in element.find_all(tag):
+                                for item in element.findall(tag):
                                     source = item.get(attr)
                                     item.set(attr, f"{{{{ url_for('static', filename='{source}') }}}}")
                         match.append(element)
+                    fount = True
+                
+                    
 
     def append(self, xpath, ftml, is_html=False, to_xpath=True, static=False):
         with self.lock:
@@ -98,14 +111,14 @@ class Woshi:
             for match in self.html.findall(xpath):
                 html = match
                 if to_string:
-                    html = _prettify(e3.tostring(html).decode("utf-8"))
+                    html = _to_string(html)
                 yield html
             else:
                 return []
 
-    def build(self, jsonpath=None):
+    def build(self):
         with self.lock:
-            return self.header + "\n" + _prettify(e3.tostring(self.html).decode("utf-8"))
+            return _to_string(self.html)
 
     def save(self, filepath=None):
         with self.lock:
@@ -120,12 +133,6 @@ class Woshi:
                 if filepath[-5:] != ".html":
                     filepath += ".html"
                 _new_file(filepath, self.build())
-
-def to_string(html):
-    try:
-        _prettify(e3.tostring(html).decode("utf-8"))
-    except:
-        ""
 
 def _parse_selector(selector):
     selector = selector.strip()
@@ -144,25 +151,22 @@ def _parse_selector(selector):
                     return f".//{parent_tag}[@class='{attribute}']"
         else:
             return f".//{selector}"
-            
     return selector
-    
 
-def _prettify(html):
-    try:
-        html = minidom.parseString(html)
-        html = html.toprettyxml(indent="  ")
-        lines = [x for x in html.split("\n")]
-        if len(lines) > 1:
-            return "\n".join(lines[1:])
-    except:
-        pass
-    return ""
+def _to_string(html, space=" "):
+    if not isinstance(space, str):
+        space = " "
+    e3.indent(html, space=space)
+    return e3.tostring(html, pretty_print=True, method="html").decode("utf-8")
 
 def _to_html_object(html, tag=None):
     if not isinstance(html, str) or tag is None:
-        return e3.fromstring("<html><head></head><body></body></html>", parser=e3.HTMLParser())
-    elements = e3.fromstring(html, parser=e3.HTMLParser())
+        html = "<html><head></head><body></body></html>"
+        elements = e3.parse(StringIO(html), parser=e3.HTMLParser())
+        elements.docinfo.public_id = None
+        elements.docinfo.system_url = None
+        return elements
+    elements = e3.parse(StringIO(html), parser=e3.HTMLParser())
     if tag is None:
         return elements
     for element in elements.findall(".//"+tag):
@@ -198,9 +202,14 @@ def _new_element(properties, parent=None):
     tag = properties.get("tag", parent)
     datalist = " ".join(formatted)
     begin = f"{tag} {datalist}".strip()
-    if html5[tag].get("closed", True):
+    if (html5 is None):
+        return ""
+    
+    config = html5.get(tag, {})
+    closed = config.get("closed", True)
+    if closed:
         return f"<{begin}>{inner}</{tag}>"
-    return f"<{begin}>"
+    return f"<{begin} />"
 
 def _decode_ftml(ftml):
     # "div #id.class1.class2.class3 data-var='hello' style='font-size:20px;color:#000;' contenteditable > hello, world!"
@@ -228,7 +237,7 @@ def _decode_ftml(ftml):
     rules = {}
     classes = []
     attributes = {}
-    parts = list(set(shlex.split(ftml)))
+    parts = list(shlex.split(ftml))
     for part in parts:
         if len(part:=part.strip()):
             if part[0] in ("#", "."):
@@ -248,6 +257,8 @@ def _decode_ftml(ftml):
                     value = part[i+1:].replace("&apos;", "'")
                 
                 found = False
+                if (html5 is None):
+                    continue
                 if (name in html5) and (value is None):
                     properties["tag"] = name
                     properties["action"] = "new"
@@ -259,11 +270,11 @@ def _decode_ftml(ftml):
                 
                 tag_attributes = config.get("attributes", [])
                 found = (name in tag_attributes)
-                if not found:
+                if not found and (core_attributes is not None):
                     found = (("*global" in tag_attributes) and (name in core_attributes))
                 if not found:
                     events = config.get("events", event_handlers)
-                    if (name is not None):
+                    if (events is not None) and (name is not None):
                         found = (name in events)
 
                 if not found:
@@ -279,12 +290,14 @@ def _decode_ftml(ftml):
                         if len(c:=c.strip()) and c not in classes:
                             classes.append(c)
                 elif name == "style":
+                    if (css3_properties is None):
+                        continue
                     styling = []
                     for style in value.split(";"):
                         temp = style.split(":")
                         if len(temp) != 2:
                             value = ""
-                            break
+                            continue
                         if temp[0].strip() in css3_properties:
                             styling.append(style)
                     value = ""
@@ -292,12 +305,12 @@ def _decode_ftml(ftml):
                         value = ";".join(styling)
                 else:
                     attributes[name] = value
-            if len(classes):
-                attributes["class"] = " ".join(classes)
-            if len(attributes):
-                properties["attributes"] = attributes
-            if len(rules):
-                properties["rules"] = rules
+    if len(classes):
+        attributes["class"] = " ".join(classes)
+    if len(attributes):
+        properties["attributes"] = attributes
+    if len(rules):
+        properties["rules"] = rules
     return properties
 
 def _new_folders(filepath):
