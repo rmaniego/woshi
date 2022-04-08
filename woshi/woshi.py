@@ -22,7 +22,8 @@ class Woshi:
     def __setitem__(self, xpath, ftml):
         with self.lock:
             if isinstance(xpath, str) and isinstance(ftml, str):
-                if not len(xpath:=xpath.strip()):
+                xpath = xpath.strip()
+                if not len(xpath):
                     return
             properties = _decode_ftml(ftml)
             if len(properties):
@@ -67,7 +68,8 @@ class Woshi:
                 self.__setitem__(xpath, ftml)
             else:
                 if isinstance(xpath, str) and isinstance(ftml, str):
-                    if not len(xpath:=xpath.strip()):
+                    xpath = xpath.strip()
+                    if not len(xpath):
                         return
                 to_xpath = isinstance(to_xpath, bool) and bool(to_xpath)
                 if to_xpath:
@@ -123,7 +125,8 @@ class Woshi:
             if filepath is None:
                 filepath = self.filepath
             if isinstance(filepath, str):
-                if not len(filepath:=filepath.strip()):
+                filepath = filepath.strip()
+                if not len(filepath):
                     return
                 if "/" in filepath:
                     if not _new_folders("/".join(filepath.split("/")[0:-1])):
@@ -139,13 +142,15 @@ def _parse_selector(selector):
             temp = selector.split("#")
             if len(temp) == 2:
                 parent_tag, attribute = temp
-                if len((parent_tag:=parent_tag.strip())):
+                parent_tag = parent_tag.strip()
+                if len(parent_tag):
                     return f".//{parent_tag}[@id='{attribute}']"
         elif "." in selector:
             temp = selector.split(".")
             if len(temp) == 2:
                 parent_tag, attribute = temp
-                if len((parent_tag:=parent_tag.strip())):
+                parent_tag = parent_tag.strip()
+                if len(parent_tag):
                     return f".//{parent_tag}[@class='{attribute}']"
         else:
             return f".//{selector}"
@@ -175,7 +180,8 @@ def _new_element(properties, parent=None):
     rules = properties.get("rules", {})
     
     formatted = []
-    if len(id:=properties.get("id", "")):
+    id = properties.get("id", "")
+    if len(id):
         data.append(f"id=\"{id}\"")
 
     attributes = properties.get("attributes", {})
@@ -218,7 +224,8 @@ def _decode_ftml(ftml):
     
     child = None
     if len(temp) == 2:
-        properties["inner"] = (child:=temp[1].strip())
+        child = temp[1].strip()
+        properties["inner"] = child
     
     if not len(ftml):
         if child is None:
@@ -237,7 +244,8 @@ def _decode_ftml(ftml):
     attributes = {}
     parts = list(shlex.split(ftml))
     for part in parts:
-        if len(part:=part.strip()):
+        part = part.strip()
+        if len(part):
             if part[0] in ("#", "."):
                 class_names = part.split(".")
                 for name in class_names:
@@ -248,10 +256,11 @@ def _decode_ftml(ftml):
             else:
                 temp = list(part.split("="))
                 name, value = temp[0], None
-                if not len(name:=name.strip()):
+                if not len(name):
                     continue
                 
-                if (i:=part.find("=")) >= len(name):
+                i = part.find("=")
+                if i >= len(name):
                     value = part[i+1:].replace("&apos;", "'")
                 
                 found = False
@@ -285,7 +294,8 @@ def _decode_ftml(ftml):
                         continue
                 if name == "class":
                     for c in value.split(" "):
-                        if len(c:=c.strip()) and c not in classes:
+                        c = c.strip()
+                        if len(c) and (c not in classes):
                             classes.append(c)
                 elif name == "style":
                     if (css3_properties is None):
