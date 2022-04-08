@@ -186,6 +186,8 @@ def _new_element(properties, parent=None):
 
     attributes = properties.get("attributes", {})
     for attribute, value in attributes.items():
+        if None in (attribute, value):
+            continue
         if len(value):
             cached = rules.get("cached", 1)
             if (attribute in ("href", "src")) and not cached:
@@ -312,6 +314,8 @@ def _decode_ftml(ftml):
                     if len(styling):
                         value = ";".join(styling)
                 else:
+                    if value is None:
+                        value = ""
                     attributes[name] = value
     if len(classes):
         attributes["class"] = " ".join(classes)
