@@ -1,4 +1,5 @@
 """ woshi """
-from .version import version as __version__
+__version__ = "1.0.2"
+
 from .woshi import Woshi
 __all__ = ["Woshi"]
