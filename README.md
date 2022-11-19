@@ -12,11 +12,9 @@ page["tag#id"] = "tag #id.class property='10' > inner text"
 And scroll down below for more examples.
 
 ## Official Release
-**Woshi** can now be used on your Python projects through PyPi by running pip command on a Python-ready environment.
+Current version is 2.0, but more updates are coming soon. Compatible with Python 3.9 or later.
 
-`pip install -U woshi`
-
-Current version is 1.0, but more updates are coming soon. It is compatible with Python 3.9+, but will require other third-party libraries during installation.
+`pip install woshi -U`
 
 
 ## Usage
@@ -28,7 +26,12 @@ from woshi import Woshi
 **Initialization**
 ```python
 page = Woshi()
-page = Woshi("home.html")
+
+# initializing with a valid HTML text
+page = Woshi("<!DOCTYPE html>...")
+
+# setting up filename
+page = Woshi(filepath="home.html")
 ```
 
 **Creating elements with an inner text**
@@ -51,9 +54,6 @@ page["#box"] = "div .message data-default='Lorem ipsum...' > Hello, world!"
 page["#box"] = "div #action.btn-list"
 page["#action"] = "button #btn1.btn.btn-no style='background-color:#b22222;color:#fff;' > CLOSE"
 page["#action"] = "button #btn2.btn.btn-maybe > LATER"
-
-# using lxml xpath
-page[".//div[@id='action']"] = "button #btn3.btn.btn-yes > CONTINUE"
 ```
 
 **Setting Properties**
@@ -64,14 +64,7 @@ page["body"] = "#canvas"
 
 **Yield all matches**
 ```python
-for element in page["button"]:
-    print(element.tag)
-```
-
-**Yield all matches as HTML string**
-```python
-for element in page.get("button", to_string=True):
-    print(element)
+print(page["button"])
 ```
 
 **Save to HTML file**
