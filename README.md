@@ -58,7 +58,7 @@ page[".//div[@id='action']"] = "button #btn3.btn.btn-yes > CONTINUE"
 
 **Setting Properties**
 ```python
-page["html"] = "lang=en" # not yet allowed in lxml
+page["html"] = "lang=en"
 page["body"] = "#canvas"
 ```
 
