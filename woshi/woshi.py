@@ -396,7 +396,9 @@ def _decode_wml(wml, strict):
                     property = ""
                     continue
                 if "=" in property:
-                    name, value = property.split("=")
+                    values = property.split("=")
+                    name = values[0]
+                    value = "=".join(values[1:])
                     if value:
                         value = RE_WML_QUOTES.sub("", value)
                         found = (
