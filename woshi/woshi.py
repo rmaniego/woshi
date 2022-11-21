@@ -425,7 +425,7 @@ def _decode_wml(wml, strict):
                                 value = ";".join(styling)
                         properties.append([name, value])
                         continue
-                properties.append([property])
+                properties.append([property, ""])
             property = ""
             continue
         property += character
