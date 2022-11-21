@@ -450,11 +450,11 @@ def _decode_wml(wml, strict):
             if tag in ("link", "img", "script"):
                 if (name in ("href", "src")) and not rules.get("cached", 1):
                     if "?" in value:
-                        value = f"{value}&t=" + str(int(time.time()))
+                        value += "&t=" + str(int(time.time()))
                     else:
-                        value = f"{value}?t=" + str(int(time.time()))
+                        value += "?t=" + str(int(time.time()))
                 if rules.get("static", 0):
-                    value = "{{ url_for('static', filename='" + value + +"') }}"
+                    value = "{{ url_for('static', filename='" + value + "') }}"
             attributes.append((name + "='" + value + "'"))
 
     if not append:
