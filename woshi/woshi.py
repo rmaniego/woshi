@@ -3,6 +3,7 @@
     Woshi
 """
 
+import time
 import threading
 from .constants import (
     HTML5,
