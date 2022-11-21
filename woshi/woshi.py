@@ -7,6 +7,7 @@ import time
 import threading
 from .constants import (
     HTML5,
+    HTML_ENTITIES,
     OPEN_TAGS,
     CSS3,
     ATTRIBUTES,
