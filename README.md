@@ -1,9 +1,9 @@
 # woshi
 On-the-go HTML Abstraction and Generator for Python.
 
-You're prototyping the next big thing and definitely writing the perfect HTML file is not on the priority.
+Woshi is simple, it abstracts XML nesting and leverages CSS3 selectors to append elements into the HTML document!
 
-**Woshi** lets you create HTML documents on the go and inside your Python scripts. It is built on top of **lxml.html** plus with another level of abstraction, so you can code with no trouble of messing up with closing tags--it is so quick and easy!
+Version 2.0 is a breaking upgrade, which means the general usage and the internal algorithms were change to make it more flexible and lighter. The package lxml was removed in favor of a custom-made builder function. Only simple CSS3 selectors are supported, but will add support in the upcoming versions.
 
 Here's a sample syntax:
 ```python
@@ -12,9 +12,9 @@ page["tag#id"] = "tag #id.class property='10' > inner text"
 And scroll down below for more examples.
 
 ## Official Release
-Current version is 2.0, but more updates are coming soon. Compatible with Python 3.9 or later.
+Current version is 2.0, but more updates are coming soon. Compatible with Python 3.10 or later.
 
-`pip install woshi -U`
+`pip install woshi`
 
 
 ## Usage
@@ -28,7 +28,7 @@ from woshi import Woshi
 page = Woshi()
 
 # initializing with a valid HTML text
-page = Woshi("<!DOCTYPE html>...")
+page = Woshi("<div></div>")
 
 # setting up filename
 page = Woshi(filepath="home.html")
@@ -64,7 +64,8 @@ page["body"] = "#canvas"
 
 **Yield all matches**
 ```python
-print(page["button"])
+for match in page["button"]:
+    print(match)
 ```
 
 **Save to HTML file**

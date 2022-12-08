@@ -5,18 +5,23 @@
 import re
 
 RE_HTML_COMPLEX = re.compile(r"[\<][a-zA-Z]+[0-6]?[\ ]")
-RE_HTML_NEWLINES = re.compile(r"\>\s+")
+RE_HTML_NEWLINES1 = re.compile(r"\>\s+")
+RE_HTML_NEWLINES2 = re.compile(r"\s+\<")
 
-RE_WML_DBL_QUOTES = re.compile(r"\\\"")
-RE_WML_APOSTROPHE = re.compile(r"\\'")
+RE_TAG = re.compile(r"[a-zA-Z1-6]+")
+RE_EID = re.compile(r"[\#][^\#\.\ ]+")
+RE_CLASS = re.compile(r"[\.][^\#\.\ ]+")
+RE_WML_PROPERTY1 = re.compile(r"[\w\-]+='[^\']*'")
+RE_WML_PROPERTY2 = re.compile(r"[\w\-]+=\"[^\"]*\"")
+RE_WML_PROPERTY3 = re.compile(r"[\w\-]+=[^\ ]+")
+RE_WML_PROPERTY4 = re.compile(r"\ [\w\-]+")
 RE_WML_QUOTES = re.compile(r"['\"]")
-RE_WML_ID = re.compile(r"[\#][^\#\.]+")
-RE_WML_CLASS = re.compile(r"[\.][^\#\.]+")
 
 RE_CSS3_SELECTORS = re.compile(r"[a-zA-Z0-9\"#$\(\)\*+\-\.:=>\[\]\^\|~\ ]")
-RE_PATH_TAG = re.compile(r"[a-zA-Z1-6]+")
-RE_PATH_ID = re.compile(r"[a-zA-Z1-6]*#[^\ ]+")
-RE_PATH_CLASS = re.compile(r"[a-zA-Z1-6]*\.[^\ ]+")
+
+HTML_BRACKET_OFFSET = [1, -1]
+HTML_BRACKETS = [">", "/>"]
+RULES = ["escape", "static", "cached"]
 
 HTML5 = {
     "a": {

@@ -13,16 +13,20 @@ from .constants import (
     ATTRIBUTES,
     HANDLERS,
     RE_HTML_COMPLEX,
-    RE_HTML_NEWLINES,
+    RE_HTML_NEWLINES1,
+    RE_HTML_NEWLINES2,
     RE_CSS3_SELECTORS,
-    RE_WML_DBL_QUOTES,
-    RE_WML_APOSTROPHE,
-    RE_WML_ID,
-    RE_WML_CLASS,
+    RE_WML_PROPERTY1,
+    RE_WML_PROPERTY2,
+    RE_WML_PROPERTY3,
+    RE_WML_PROPERTY4,
     RE_WML_QUOTES,
-    RE_PATH_TAG,
-    RE_PATH_ID,
-    RE_PATH_CLASS,
+    RE_TAG,
+    RE_EID,
+    RE_CLASS,
+    HTML_BRACKET_OFFSET,
+    HTML_BRACKETS,
+    RULES,
 )
 
 
@@ -41,8 +45,7 @@ class Woshi:
             path = path.strip().lower()
             if not path:
                 WoshiException("`path` must be a string")
-            wml = wml.strip()
-            self._html = _attach_wml(self._html, path, wml, self._strict)
+            self._html = _attach_wml(self._html, path, wml.strip(), self._strict)
 
     def append(self, path, html):
         self.__setitem__(path, html)
@@ -67,235 +70,324 @@ class Woshi:
                     f.write(self.build())
 
 
-def _validate_path(path):
-    """Check if selectors conform to CSS3 standards."""
-    if RE_CSS3_SELECTORS.sub("", path):
-        raise WoshiException("`path` only accepts valid CSS3 selectors.")
-    # https://dev.to/af/xpath-vs-css-selector-what-is-going-on-with-these-two-4i7g
-    # - all p elements
-    # - element by ID
-    # - element by Class
-    # - others, pending
+class PathParser:
+    """Check if selectors conform to CSS3 standards and deconstruct.
+    https://dev.to/af/xpath-vs-css-selector-what-is-going-on-with-these-two-4i7g
+     - elements by tag, elements by ID, elements by Class
+     - others (pending)
+    """
 
+    def __init__(self, path):
+        if RE_CSS3_SELECTORS.sub("", path):
+            raise WoshiException("`path` only accepts valid CSS3 selectors.")
 
-def _parse_path(path):
-    """ """
-    tag = ""
-    search = ""
-    selector = ""
-    attribute = ""
-    if not RE_PATH_TAG.sub("", path):
-        tag = path
-        search = "<" + path
-        selector = "tag"
-    elif not RE_PATH_ID.sub("", path):
-        tag, search = path.split("#")
-        selector = "id"
-        attribute = "id="
-    elif not RE_PATH_CLASS.sub("", path):
-        tag, search = path.split(".")
-        selector = "class"
-        attribute = "class="
-    return (tag, search, selector, attribute)
+        self.tag = ""
+        self.attribute = ""
+        self.value = ""
+
+        for match in RE_EID.findall(path):
+            self.attribute = "id"
+            self.value = match.replace("#", "").strip()
+            path = RE_EID.sub("", path)
+
+        for match in RE_CLASS.findall(path):
+            self.attribute = "class"
+            self.value = match.replace(".", "").strip()
+            path = RE_CLASS.sub("", path)
+
+        for match in RE_TAG.findall(path):
+            self.tag = match.strip()
+
+    def delimiter(self):
+        if self.tag:
+            return "<" + self.tag
+        return self.attribute
 
 
 def _attach_wml(html, path, wml, strict):
     """Update HTML with new attributes or path."""
-    _validate_path(path)
+
+    selector = PathParser(path)
+    delimiter = selector.delimiter()
 
     decoded = wml
-    if decoded[0] != "<":
+    if "<" != decoded[0]:
+        # if not an HTML string, decode first
         decoded = _decode_wml(decoded, strict)
-    append = int((decoded[0] == "<"))
+    # set append = True for HTML strings
+    append = "<" == decoded[0]
 
-    tag, search, selector, attribute = _parse_path(path)
-    attribute_width = len(attribute)
-
-    if not selector:
-        raise WoshiException("Complex CSS3 selectors are currently unsupported.")
-
-    if not search:
-        return html
-
-    next = html
-    formatted = ""
-    width = len(search)
-    while next:
-        if not append:
-            # this will append the attributes
-            # to the selected element/s
-            if selector == "tag":
-                # find opening bracket:
-                l = _lfind(next, search, strict=False)
-                if l == -1:
-                    formatted += next
-                    break
-                # find closing bracket:
-                remaining = next[l + width :]
-                r = _lfind(remaining, ">")
-                closing = [">", " />"][(remaining[r - 1] == "/")]
-                # concatenate left + decoded wml
-                formatted += next[: l + width] + " " + decoded + closing
-                # proceed to remaining html
-                next = remaining[r + 1 :]
-                continue
-            # find element by id, class
-            # find selector attribute:
-            l = _lfind(next, attribute, strict=False)
-            if l == -1:
-                formatted += next
-                break
-            # get value of attribute
-            remaining = next[l + attribute_width :]
-            quote = remaining[0]
-            r = _lfind(remaining, quote)
-            if search not in remaining[1:r]:
-                # if not found,
-                # proceed to next element
-                r = _lfind(next, ">")
-                formatted += next[: r + 1]
-                next = next[r + 1 :]
-                continue
-            # find closing tag:
-            r = _lfind(remaining, ">")
-            closing = [">", " />"][(remaining[r - 1] == "/")]
-            # concatenate left + decoded wml
-            formatted += next[: l - 1] + " " + decoded + closing
-            # proceed to remaining html
-            next = remaining[r + 1 :]
-            if selector == "id":
-                formatted += next
-                break
-            continue
-        # append child
-        if selector == "tag":
-            # find opening bracket:
-            l = _lfind(next, search, strict=False)
-            if l == -1:
-                formatted += next
-                break
-            # find closing bracket:
-            r = _lfind(next[l:], ">")
-            if tag in OPEN_TAGS:
-                formatted += next[: r + 1]
-                next = next[r + 1 :]
-                continue
-            # concatenate decoded wml after the last child
-            offset = _find_last_child(next[l + r + 1 :], tag)
-            formatted += next[: offset + l + r + 1] + decoded
-            # proceed to remaining html
-            next = next[offset + l + r + 1 :]
-            continue
-        # append by element id/class
-        l = _lfind(next, attribute, strict=False)
-        if l == -1:
-            formatted += next
+    index = 1
+    deconstructed = _deconstruct_html(html, delimiter)
+    total = len(deconstructed)
+    while 1:
+        if total <= index:
             break
-        # get the attribute value
-        # attribute='value' <--
-        quote = next[l + attribute_width :][0]
-        remaining = next[l + attribute_width :]
-        r = _lfind(remaining[1:], quote)
-        if search not in remaining[1 : r + 1]:
-            # if not found, proceed to next element
-            # get the whole tag: <start a='b'> OR </end>
-            r = _lfind(next, ">")
-            formatted += next[: r + 1]
-            next = next[r + 1 :]
+        tag = selector.tag
+        if not tag:
+            previous = deconstructed[index - 1] + " "
+            l = _rfind(previous, "<")
+            r = _lfind(previous[l:], " ")
+            tag = previous[l + 1 : l + r]
+        open = tag in OPEN_TAGS
+
+        shard = deconstructed[index]
+        attribute = selector.attribute
+        i = _lfind(shard, ">")  # element scope
+        l = (delimiter != attribute) or len('="')
+        if selector.tag and delimiter != attribute:
+            # if selector tag#id / tag.class
+            # check if attribute value is present
+            x = _lfind(shard[:i], attribute, False)
+            if x == -1:
+                index += 1
+            l = x + len(attribute + '="')
+        if attribute:
+            r = _lfind(shard[l:i], '"')
+            if selector.value not in shard[l : l + r]:
+                index += 1
+                continue
+        if not append:
+            # extend element attributes
+            i -= int(open)
+            deconstructed[index] = shard[:i] + " " + decoded + shard[i:]
+            if selector.attribute == "id":
+                break
+            index += 1
             continue
 
-        # locate origin and tag having the attribute
-        # if the attribute='value' has been found
-        # get all elements on the left of the attribute value
-        origin = next[:l]
-        offset = len(origin)
-        # find tag uses rfind `<` to get:
-        # `span` in "</div></div><span"
-        tag = _find_tag(origin)
-        # on the characters to the right of the attribute,
-        # find the index of the clsoing angled bracket
-        r = _lfind(next[l:], ">") + 1
-        # use the l (left) and r (right) index to get
-        # all tag from start to the searched element:
-        # example: </div></div><span attribute='value'>
-        formatted += next[: offset + r]
-
-        # concatenate decoded wml
-        if tag in OPEN_TAGS:
-            # tag is not a 'closed' tag,
-            # append it immediately after the end
-            # of the element
-            formatted += decoded
-            next = next[offset + r + 1 :]
+        if open:
+            r = _lfind(shard, ">") + 1
+            deconstructed[index] = shard[:r] + decoded + shard[r:]
+            if selector.attribute == "id":
+                break
+            index += 1
             continue
+        # loop to the next shards
+        # append before closing tag
+        closing = "</" + tag + ">"
+        for i in range(index, total):
+            shard = deconstructed[i]
+            r = _lfind(shard, closing, False)
+            if r == -1:
+                continue
+            deconstructed[i] = shard[:r] + decoded + shard[r:]
+        if selector.attribute == "id":
+            break
+        index += 1
 
-        # concatenate after the last child
-        siblings = next[offset + r :]
-        offset = _find_last_child(siblings, tag)
-        formatted += siblings[:offset] + decoded
-        # proceed to remaining html
-        next = siblings[offset:]
-    return formatted
+    linker = " " + delimiter
+    if selector.tag:
+        linker = delimiter + " "
+    return linker.join(deconstructed)
 
 
 def _find_matches(html, path):
-    print(html, path)
-    _validate_path(path)
-    tag, search, selector, attribute = _parse_path(path)
-    attribute_width = len(attribute)
-    if selector == "tag":
-        # find opening bracket:
-        l = _lfind(html, search)
-        # find closing bracket:
-        r = _lfind(html[l:], ">")
-        if tag in OPEN_TAGS:
-            return html[l + r]
-        # find children until closing tag
-        offset = _find_last_child(html[l + r + 1 :], tag)
-        return html[l : offset + l + r + 1] + f"</{tag}>"
 
-    while html:
-        # append by element id/class
-        l = _lfind(html, attribute)
-        # get value of attribute
-        quote = html[l + attribute_width :][0]
-        remaining = html[l + attribute_width :]
-        r = _lfind(remaining[1:], quote)
-        if search not in remaining[1 : r + 1]:
-            # if not found,
-            # proceed to next element
-            r = _lfind(remaining, ">")
-            html = remaining[r + 1 :]
+    matches = []
+
+    selector = PathParser(path)
+    delimiter = selector.delimiter()
+
+    index = 1
+    deconstructed = _deconstruct_html(html, delimiter)
+    total = len(deconstructed)
+    while 1:
+        if total <= index:
+            break
+        tag = selector.tag
+        if not tag:
+            previous = deconstructed[index - 1] + " "
+            l = _rfind(previous, "<")
+            r = _lfind(previous[l:], " ")
+            tag = previous[l + 1 : l + r]
+        open = tag in OPEN_TAGS
+
+        increments = 1
+        shard = deconstructed[index]
+        attribute = selector.attribute
+        if delimiter != attribute:
+            increments += int(not open)
+
+        i = _lfind(shard, ">")  # element scope
+        l = (delimiter != attribute) or len('="')
+        if selector.tag and delimiter != attribute:
+            # if selector tag#id / tag.class
+            # check if attribute value is present
+            x = _lfind(shard[:i], attribute, False)
+            if x == -1:
+                index += increments
+            l = x + len(attribute + '="')
+        if attribute:
+            r = _lfind(shard[l:i], '"')
+            if selector.value not in shard[l : l + r]:
+                index += increments
+                continue
+
+        # get the bounding tokens
+        # of the deconstructed element
+        l = 0
+        parts = [delimiter]
+        if "<" != delimiter[0]:
+            previous = deconstructed[index - 1]
+            l = _rfind(previous, "<")
+            parts = [previous[l:]]
+        if open:
+            r = _lfind(shard, ">") + 1
+            parts.append(shard[:r])
+        else:
+            closing = "</" + tag + ">"
+            r = _lfind(shard, closing)
+            parts.append(shard[: r + len(closing)])
+        matches.append(" ".join(parts))
+        if selector.attribute == "id":
+            break
+        index += 1
+    return matches
+
+
+def _decode_wml(wml, strict):
+    """Convert input string into an HTML element.
+    Example: "div #id.class data-name=hello style='font-size:20px; color:#000;' contenteditable > hello, world!"
+    """
+
+    if not wml:
+        raise WoshiException("Empty string, check the documentation.")
+
+    content = ""
+    if ">" in wml:
+        i = _lfind(wml, ">")
+        content = wml[i + 1 :].strip()
+        wml = wml[:i].strip()
+    wml += " "
+
+    tag = ""
+    attributes = {}
+    i = _lfind(wml, " ")
+    temp = wml[:i]
+
+    append = "=" not in temp
+    if append:
+        # attempt collect id and class in tag
+        # format: tag#id.class1.class2.class3
+        for match in RE_EID.findall(temp):
+            attributes["id"] = match.replace("#", "")
+        temp = RE_EID.sub("", temp)
+        for match in RE_CLASS.findall(temp):
+            attributes["class"] = attributes.get("class", []) + [match.replace(".", "")]
+        tag = RE_CLASS.sub("", temp)
+        append = bool(len(tag))
+        wml = wml[i + 1 :]
+
+    properties = []
+    ## collect matching properties in wml
+    for pattern in (
+        RE_WML_PROPERTY1,
+        RE_WML_PROPERTY2,
+        RE_WML_PROPERTY3,
+        RE_WML_PROPERTY4,
+    ):
+        properties.extend(pattern.findall(wml))
+        wml = pattern.sub("", wml)
+
+    # attempt collect id and class in wml
+    # format: #id.class1 / #id .class1
+    for match in RE_EID.findall(wml):
+        attributes["id"] = match.replace("#", "")
+    wml = RE_EID.sub("", wml)
+    for match in RE_CLASS.findall(wml):
+        attributes["class"] = attributes.get("class", []) + [match.replace(".", "")]
+    wml = RE_CLASS.sub("", wml)
+    wml = wml.strip()
+
+    # parse properties to attributes
+    for property in properties:
+        index = _lfind(property, "=", False)
+        if index == -1:
+            attributes[property] = None
             continue
-        # locate origin and tag having the attribute
-        origin = html[:l]
-        offset = len(origin)
-        l = _rfind(origin, "<")
-        r = _lfind(html[l:], ">") + 1
+        property = RE_WML_QUOTES.sub("", property)
+        name = property[:index]
+        attributes[name] = property[index + 1 :]
 
-        # concatenate decoded wml
-        tag = _find_tag(origin)
-        if tag in OPEN_TAGS:
-            return html[offset + r + 1 :]
+    formatted_attributes = []
+    for name, value in attributes.items():
+        if name in RULES:
+            continue
+        if not value:
+            formatted_attributes.append(name)
+            continue
+        elif name == "class" and strict:
+            # make sure all class names are unique
+            # note that the order will be mixed
+            classes = " ".join(value)
+            value = " ".join(list(set(classes.split(" "))))
 
-        # concatenate after the last child
-        siblings = html[l+r:]
-        offset = _find_last_child(siblings, tag)
-        return html[l:l+r] + siblings[:offset] + f"</{tag}>"
-    return ""
+        if tag and strict:
+            config = HTML5.get(tag, {})
+            tag_attributes = config.get("attributes", "")
+            if not (
+                (name in tag_attributes)
+                or (("*global" in tag_attributes) and (name in ATTRIBUTES))
+                or (name in HANDLERS)
+            ):
+                continue
+
+        if (
+            tag in ("link", "img", "script")
+            and (name in ("href", "src"))
+            and not int(attributes.get("cached", 1))
+        ):
+            if "?" in value:
+                value += "&t=" + str(int(time.time()))
+            else:
+                value += "?t=" + str(int(time.time()))
+            if int(attributes.get("static", 0)):
+                value = "{{ url_for('static', filename='" + value + "') }}"
+        if isinstance(value, list):
+            value = " ".join(value)
+        formatted_attributes.append(name + '="' + str(value) + '"')
+
+    if not append:
+        return " ".join(formatted_attributes)
+
+    if strict and tag not in HTML5:
+        raise WoshiException("No HTML5 tag found on WML text.")
+
+    begin = tag
+    if formatted_attributes:
+        begin += " " + " ".join(formatted_attributes)
+
+    if tag not in OPEN_TAGS:
+        if content and int(attributes.get("escape", 0)):
+            content = "".join([HTML_ENTITIES.get(c, c) for c in content])
+        return f"<{begin}>{content}</{tag}>"
+    return f"<{begin} />"
 
 
-def _get_tag(html):
-    """Get tag searching from leftmost index."""
-    elements = list(RE_HTML_COMPLEX.findall(html))
-    if elements:
-        element = elements[0]
-        if html[: len(element)] == element:
-            i = _lfind(html, "<")
-            return html[i + 1 :].split(" ")[0]
-    l = _lfind(html, "<")
-    r = _lfind(html[l:], ">")
-    return html[l + 1 : l + r]
+def _parse_to_html(html):
+    """Set initial HTML content.
+
+    :param html: a valid string (str, None)
+    """
+    if html is None:
+        return "<!DOCTYPE html><html><head></head><body></body></html>"
+    if isinstance(html, str):
+        return RE_HTML_NEWLINES1.sub(">", html)
+    raise WoshiException("`html` must be in string format.")
+
+
+def _deconstruct_html(html, delimiter, strip=True):
+    """Break HTML into search groups.
+
+    :param html: a string representation of an HTML document
+    :param delimiter: a search value as separator
+    :param strip: strip whitespaces (Default = False)
+    """
+    if strip:
+        html = RE_HTML_NEWLINES1.sub(">", html)
+        html = RE_HTML_NEWLINES2.sub("<", html)
+    return [x.strip() for x in html.split(delimiter) if x.strip()]
 
 
 def _find_tag(html):
@@ -317,188 +409,6 @@ def _rfind(html, search, strict=True):
     if strict and i == -1:
         raise WoshiException("Unable to search key in HTML string.")
     return i
-
-
-def _find_last_child(html, tag):
-    i = 0
-    tags = [tag]
-    length = len(html)
-    while i < length:
-        r = _lfind(html[i:], "<", strict=False)
-        if r == -1:
-            break
-        offset = _lfind(html[i + r :], ">") + 1
-        t = _get_tag(html[i + r :])
-        if t[0] == "/":
-            if tags[-1] == t[1:]:
-                tags = tags[:-1]
-            if not tags:
-                return i + r
-            i += offset
-            continue
-        if t not in OPEN_TAGS:
-            tags.append(t)
-        i += offset
-    return i
-
-
-def _decode_wml(wml, strict):
-    # "div #id.class1.class2.class3 data-var='hello' style='font-size:20px;color:#000;' contenteditable > hello, world!"
-
-    if not wml:
-        return wml
-
-    index = len(wml)
-    if ">" in wml:
-        index = wml.find(">")
-    content = wml[index + 1 :].strip()
-    wml = wml[:index].strip()
-
-    # convert escaped quotes to html entities
-    wml = RE_WML_DBL_QUOTES.sub("&#34;", wml)
-    wml = RE_WML_APOSTROPHE.sub("&#39;", wml)
-    wml += " "
-
-    tag = ""
-    eid = ""
-    classes = []
-    append = False
-    config = {}
-
-    rules = {}
-    quotes = ""
-    property = ""
-    properties = []
-    tag_attributes = ""
-    for i in range(len(wml)):
-        character = wml[i]
-        if character == " " and not quotes:
-            if property:
-                if not tag:
-                    append = "=" not in property
-                    if append:
-                        tag, eid, classes = _break_tag_identity(property)
-                        if strict and tag not in HTML5:
-                            if not tag:
-                                decoded = eid
-                                if classes:
-                                    decoded += (
-                                        " class='" + " ".join(list(set(classes))) + "'"
-                                    )
-                                return decoded.strip()
-                            raise WoshiException("No HTML5 tag found on WML text.")
-                        config = HTML5.get(tag, {})
-                        tag_attributes = config.get("attributes", "")
-                        property = ""
-                        continue
-                if property[0] in "#.":
-                    _, eid, c = _break_tag_identity(property)
-                    classes.extend(c)
-                    property = ""
-                    continue
-                if "=" in property:
-                    values = property.split("=")
-                    name = values[0]
-                    value = "=".join(values[1:])
-                    if value:
-                        value = RE_WML_QUOTES.sub("", value)
-                        found = (
-                            (name in tag_attributes)
-                            or (("*global" in tag_attributes) and (name in ATTRIBUTES))
-                            or (name in HANDLERS)
-                        )
-                        property = ""
-                        if not found:
-                            if name in ("escape", "static", "cached"):
-                                rules[name] = int(value)
-                                continue
-                        if name == "id":
-                            eid = f"id='{value}'"
-                            continue
-                        if name == "class":
-                            classes.append(value)
-                            continue
-                        if strict and name == "style":
-                            styling = []
-                            for style in value.split(";"):
-                                k, v = style.split(":")
-                                if v and k.strip() in CSS3:
-                                    styling.append(style)
-                            if len(styling):
-                                value = ";".join(styling)
-                        properties.append([name, value])
-                        continue
-                properties.append([property, ""])
-            property = ""
-            continue
-        property += character
-        if character in ("'\""):
-            if quotes:
-                if quotes[-1] == character:
-                    quotes = quotes[-1]
-                    continue
-            quotes += character
-            continue
-
-    # format all attributes
-    attributes = []
-    if eid:
-        attributes.append(eid)
-    if classes:
-        attributes.append("class='" + " ".join(list(set(classes))) + "'")
-    if properties:
-        for name, value in properties:
-            if not value:
-                attributes.append(name)
-                continue
-            if tag in ("link", "img", "script"):
-                if (name in ("href", "src")) and not rules.get("cached", 1):
-                    if "?" in value:
-                        value += "&t=" + str(int(time.time()))
-                    else:
-                        value += "?t=" + str(int(time.time()))
-                if rules.get("static", 0):
-                    value = "{{ url_for('static', filename='" + value + "') }}"
-            attributes.append((name + "='" + value + "'"))
-
-    if not append:
-        return " ".join(attributes)
-
-    begin = tag
-    if attributes:
-        begin += " " + " ".join(attributes)
-
-    # format into a valid strict tag
-    if tag not in OPEN_TAGS:
-        if content and rules.get("escape", 0):
-            content = "".join([HTML_ENTITIES.get(c, c) for c in content])
-        return f"<{begin}>{content}</{tag}>"
-    return f"<{begin} />"
-
-
-def _break_tag_identity(tag):
-    # https://www.w3.org/TR/selectors-3/
-    eid = ""
-    classes = []
-    if "#" in tag:
-        hashid = list(RE_WML_ID.findall(tag))[0]
-        eid = "id='" + hashid[1:] + "'"
-        tag = tag.replace(hashid, "")
-    if "." in tag:
-        for item in list(RE_WML_CLASS.findall(tag)):
-            classes.append(item[1:])
-            tag = tag.replace(item, "")
-    return tag, eid, classes
-
-
-def _parse_to_html(html):
-    if html is None:
-        return "<!DOCTYPE html><html><head></head><body></body></html>"
-    if isinstance(html, bytes):
-        html = str(html, "utf-8")
-    if isinstance(html, str):
-        return RE_HTML_NEWLINES.sub(">", html)
-    raise WoshiException("`html` must be in string format.")
 
 
 class WoshiException(Exception):
