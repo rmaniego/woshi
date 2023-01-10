@@ -4,6 +4,7 @@
 """
 
 import time
+import logging
 import threading
 from .constants import (
     HTML5,
@@ -31,20 +32,23 @@ from .constants import (
 
 
 class Woshi:
-    def __init__(self, html=None, filepath=None, strict=True):
+    def __init__(self, html=None, filepath=None, strict=True, debug=False):
         self._filepath = filepath
         self._html = _parse_to_html(html)
         self._lock = threading.RLock()
+        
+        if isinstance(debug, bool) and debug:
+            logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 
         if not isinstance(strict, bool):
-            raise WoshiException("`strict` must be `True` or `False` only.")
+            raise TypeError("`strict` must be `True` or `False` only.")
         self._strict = strict
 
     def __setitem__(self, path, wml):
         with self._lock:
             path = path.strip().lower()
             if not path:
-                WoshiException("`path` must be a string")
+                TypeError("`path` must be a string")
             self._html = _attach_wml(self._html, path, wml.strip(), self._strict)
 
     def append(self, path, html):
@@ -58,7 +62,11 @@ class Woshi:
         return self.__getitem__(path)
 
     def build(self):
-        return self._html.replace(" >", ">")
+        formatted = self._html.replace("<#", "<")
+        formatted = formatted.replace("</#", "</")
+        formatted = formatted.replace("#id=", "id=")
+        formatted = formatted.replace("#class=", "class=")
+        return formatted.replace(" >", ">")
 
     def save(self, filepath=None):
         with self._lock:
@@ -79,19 +87,19 @@ class PathParser:
 
     def __init__(self, path):
         if RE_CSS3_SELECTORS.sub("", path):
-            raise WoshiException("`path` only accepts valid CSS3 selectors.")
+            raise ValueError("`path` only accepts valid CSS3 selectors.")
 
         self.tag = ""
         self.attribute = ""
         self.value = ""
 
         for match in RE_EID.findall(path):
-            self.attribute = "id"
+            self.attribute = "#id"
             self.value = match.replace("#", "").strip()
             path = RE_EID.sub("", path)
 
         for match in RE_CLASS.findall(path):
-            self.attribute = "class"
+            self.attribute = "#class"
             self.value = match.replace(".", "").strip()
             path = RE_CLASS.sub("", path)
 
@@ -100,7 +108,7 @@ class PathParser:
 
     def delimiter(self):
         if self.tag:
-            return "<" + self.tag
+            return "<#" + self.tag
         return self.attribute
 
 
@@ -116,6 +124,9 @@ def _attach_wml(html, path, wml, strict):
         decoded = _decode_wml(decoded, strict)
     # set append = True for HTML strings
     append = "<" == decoded[0]
+    
+    logging.debug("\n## " + selector.delimiter() + f": {decoded}")
+    logging.debug(f" 1: {selector.tag=}, {delimiter=}, != {selector.attribute=}")
 
     index = 1
     deconstructed = _deconstruct_html(html, delimiter)
@@ -123,57 +134,105 @@ def _attach_wml(html, path, wml, strict):
     while 1:
         if total <= index:
             break
+        
+        # set or find tag of selector
         tag = selector.tag
         if not tag:
             previous = deconstructed[index - 1] + " "
             l = _rfind(previous, "<")
             r = _lfind(previous[l:], " ")
-            tag = previous[l + 1 : l + r]
+            tag = previous[l + 2 : l + r]
+        # open tags mean it is `self-closing`
         open = tag in OPEN_TAGS
 
+        
         shard = deconstructed[index]
         attribute = selector.attribute
         i = _lfind(shard, ">")  # element scope
         l = (delimiter != attribute) or len('="')
-        if selector.tag and delimiter != attribute:
+        
+        # perform this if tag is known,
+        # but is not the delimiter for sharding
+        if selector.tag and attribute and delimiter != attribute:
             # if selector tag#id / tag.class
             # check if attribute value is present
             x = _lfind(shard[:i], attribute, False)
             if x == -1:
-                index += 1
-            l = x + len(attribute + '="')
-        if attribute:
-            r = _lfind(shard[l:i], '"')
-            if selector.value not in shard[l : l + r]:
+                logging.debug(" *** next")
                 index += 1
                 continue
+            l = x + len(attribute + '="')
+        
+        # perform this to check if value
+        # is present in the attribute value/s
+        # else skip to the next shard
+        if attribute:
+            r = _lfind(shard[l:i], '"')
+            values = (shard[l : l + r]).split(" ")
+            if selector.value not in values:
+                index += 1
+                continue
+            logging.debug(f" 2: {selector.value=} in \"" + shard[l : l + r] + "\" OK")
+        
         if not append:
-            # extend element attributes
-            i -= int(open)
+            # this extends or add more attributes
+            # to the element as defined by the selector
+            i -= int(open) # this moves the index before the ">" character
             deconstructed[index] = shard[:i] + " " + decoded + shard[i:]
-            if selector.attribute == "id":
+            if attribute == "#id":
                 break
+            # repeat process on the next elements
+            # with having the same class name
             index += 1
             continue
-
+        
+        # perform this if element is open
+        # but must append new element after it
+        logging.debug(f" 3: {tag=}, {open=}")
         if open:
             r = _lfind(shard, ">") + 1
             deconstructed[index] = shard[:r] + decoded + shard[r:]
-            if selector.attribute == "id":
+            if attribute == "#id":
                 break
+            # repeat process on the next elements
+            # with having the same class name
             index += 1
             continue
+        
         # loop to the next shards
         # append before closing tag
-        closing = "</" + tag + ">"
+        skips = 0
+        closing = f"</#{tag}>"
+        offset = len(closing)
+        logging.debug(f" 4: Find closing:")
         for i in range(index, total):
+            # check if closing tag is in current shard
             shard = deconstructed[i]
+            skips += shard.count(f"<#{tag}")
+            logging.debug(f" - {closing}: {shard}")
             r = _lfind(shard, closing, False)
             if r == -1:
                 continue
+            
+            next = False
+            # count children having the same tag
+            # and skip though all children
+            logging.debug(f" 5: {skips=}\n - " + shard[r:])
+            for _ in range(skips):
+                skips -= 1
+                temp = _lfind(shard[r+offset:], closing, False)
+                if temp == -1:
+                    next = True
+                    break
+                # adjust offset after skipping
+                r +=  temp + offset
+                logging.debug("\t- " + shard[r:])
+            if next:
+                continue
             deconstructed[i] = shard[:r] + decoded + shard[r:]
-        if selector.attribute == "id":
-            break
+            if attribute == "#id":
+                logging.debug(" *** end")
+                break
         index += 1
 
     linker = " " + delimiter
@@ -188,6 +247,9 @@ def _find_matches(html, path):
 
     selector = PathParser(path)
     delimiter = selector.delimiter()
+    
+    logging.debug("\n## " + selector.delimiter())
+    logging.debug(f" 1: {selector.tag=}, {delimiter=}, != {selector.attribute=}")
 
     index = 1
     deconstructed = _deconstruct_html(html, delimiter)
@@ -195,34 +257,44 @@ def _find_matches(html, path):
     while 1:
         if total <= index:
             break
+        
+        # set or find tag of selector
         tag = selector.tag
         if not tag:
             previous = deconstructed[index - 1] + " "
             l = _rfind(previous, "<")
             r = _lfind(previous[l:], " ")
-            tag = previous[l + 1 : l + r]
+            tag = previous[l + 2 : l + r]
+        # open tags mean it is `self-closing`
         open = tag in OPEN_TAGS
-
-        increments = 1
+        
         shard = deconstructed[index]
         attribute = selector.attribute
-        if delimiter != attribute:
-            increments += int(not open)
-
         i = _lfind(shard, ">")  # element scope
         l = (delimiter != attribute) or len('="')
-        if selector.tag and delimiter != attribute:
+        
+        # perform this if tag is known,
+        # but is not the delimiter for sharding
+        if selector.tag and attribute and delimiter != attribute:
             # if selector tag#id / tag.class
             # check if attribute value is present
             x = _lfind(shard[:i], attribute, False)
             if x == -1:
-                index += increments
+                logging.debug(" *** next")
+                index += 1
+                continue
             l = x + len(attribute + '="')
+        
+        # perform this to check if value
+        # is present in the attribute value/s
+        # else skip to the next shard
         if attribute:
             r = _lfind(shard[l:i], '"')
-            if selector.value not in shard[l : l + r]:
-                index += increments
+            values = (shard[l : l + r]).split(" ")
+            if selector.value not in values:
+                index += 1
                 continue
+            logging.debug(f" 2: {selector.value=} in \"" + shard[l : l + r] + "\" OK")
 
         # get the bounding tokens
         # of the deconstructed element
@@ -236,10 +308,16 @@ def _find_matches(html, path):
             r = _lfind(shard, ">") + 1
             parts.append(shard[:r])
         else:
-            closing = "</" + tag + ">"
+            closing = "</#" + tag + ">"
             r = _lfind(shard, closing)
             parts.append(shard[: r + len(closing)])
-        matches.append(" ".join(parts))
+        
+        formatted = " ".join(parts).replace("<#", "<")
+        formatted = formatted.replace("</#", "</")
+        formatted = formatted.replace("#class=", "class=")
+        formatted = formatted.replace("#class=", "class=")
+        matches.append(formatted)
+        
         if selector.attribute == "id":
             break
         index += 1
@@ -252,7 +330,7 @@ def _decode_wml(wml, strict):
     """
 
     if not wml:
-        raise WoshiException("Empty string, check the documentation.")
+        raise ValueError("Empty string, check the documentation.")
 
     content = ""
     if ">" in wml:
@@ -322,6 +400,9 @@ def _decode_wml(wml, strict):
             # note that the order will be mixed
             classes = " ".join(value)
             value = " ".join(list(set(classes.split(" "))))
+        
+        if name in ("id", "class"):
+            name = f"#{name}"
 
         if tag and strict:
             config = HTML5.get(tag, {})
@@ -352,7 +433,7 @@ def _decode_wml(wml, strict):
         return " ".join(formatted_attributes)
 
     if strict and tag not in HTML5:
-        raise WoshiException("No HTML5 tag found on WML text.")
+        raise ValueError("No HTML5 tag found on WML text.")
 
     begin = tag
     if formatted_attributes:
@@ -361,8 +442,8 @@ def _decode_wml(wml, strict):
     if tag not in OPEN_TAGS:
         if content and int(attributes.get("escape", 0)):
             content = "".join([HTML_ENTITIES.get(c, c) for c in content])
-        return f"<{begin}>{content}</{tag}>"
-    return f"<{begin} />"
+        return f"<#{begin}>{content}</#{tag}>"
+    return f"<#{begin} />"
 
 
 def _parse_to_html(html):
@@ -371,10 +452,13 @@ def _parse_to_html(html):
     :param html: a valid string (str, None)
     """
     if html is None:
-        return "<!DOCTYPE html><html><head></head><body></body></html>"
+        html = "<!DOCTYPE html><html><head></head><body></body></html>"
+        html = html.replace("<", "<#")
+        return html.replace("<#/", "</#")
     if isinstance(html, str):
-        return RE_HTML_NEWLINES1.sub(">", html)
-    raise WoshiException("`html` must be in string format.")
+        html = RE_HTML_NEWLINES1.sub(">", html)
+        return html.replace("<", "<#")
+    raise TypeError("`html` must be in string format.")
 
 
 def _deconstruct_html(html, delimiter, strip=True):
@@ -400,22 +484,12 @@ def _find_tag(html):
 def _lfind(html, search, strict=True):
     i = html.find(search)
     if strict and i == -1:
-        raise WoshiException("Unable to search key in HTML string.")
+        raise ValueError("Unable to search key in HTML string.")
     return i
 
 
 def _rfind(html, search, strict=True):
     i = html.rfind(search)
     if strict and i == -1:
-        raise WoshiException("Unable to search key in HTML string.")
+        raise ValueError("Unable to search key in HTML string.")
     return i
-
-
-class WoshiException(Exception):
-    """Custom Woshi Exception.
-
-    :param message: a valid string
-    """
-
-    def __init__(self, message):
-        super().__init__(message)
