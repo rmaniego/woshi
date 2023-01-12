@@ -314,7 +314,7 @@ def _find_matches(html, path):
         
         formatted = " ".join(parts).replace("<#", "<")
         formatted = formatted.replace("</#", "</")
-        formatted = formatted.replace("#class=", "class=")
+        formatted = formatted.replace("#id=", "id=")
         formatted = formatted.replace("#class=", "class=")
         matches.append(formatted)
         
