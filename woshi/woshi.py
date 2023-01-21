@@ -458,7 +458,7 @@ def _parse_to_html(html):
     if isinstance(html, str):
         html = RE_HTML_NEWLINES1.sub(">", html)
         html = html.replace("<", "<#")
-        html = html.replace("</", "</#")
+        html = html.replace("<#/", "</#")
         html = html.replace("id=", "#id=")
         return html.replace("class=", "#class=")
     raise TypeError("`html` must be in string format.")
