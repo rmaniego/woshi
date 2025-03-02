@@ -1,6 +1,6 @@
 """
-    (c) 2022 Rodney Maniego Jr.
-    Woshi
+(c) 2022 Rodney Maniego Jr.
+Woshi
 """
 
 import time
@@ -36,7 +36,7 @@ class Woshi:
         self._filepath = filepath
         self._html = _parse_to_html(html)
         self._lock = threading.RLock()
-        
+
         if isinstance(debug, bool) and debug:
             logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 
@@ -73,9 +73,11 @@ class Woshi:
             if filepath is not None:
                 self._filepath = filepath
             if self._filepath is not None:
-                self._filepath = filepath.strip()
+                self._filepath = self._filepath.strip()
                 with open(self._filepath, "w+", encoding="utf-8") as f:
                     f.write(self.build())
+                return
+            assert self._filepath not in ("", None), "Filepath must be specified."
 
 
 class PathParser:
@@ -124,7 +126,7 @@ def _attach_wml(html, path, wml, strict):
         decoded = _decode_wml(decoded, strict)
     # set append = True for HTML strings
     append = "<" == decoded[0]
-    
+
     logging.debug("\n## " + selector.delimiter() + f": {decoded}")
     logging.debug(f" 1: {selector.tag=}, {delimiter=}, != {selector.attribute=}")
 
@@ -134,7 +136,7 @@ def _attach_wml(html, path, wml, strict):
     while 1:
         if total <= index:
             break
-        
+
         # set or find tag of selector
         tag = selector.tag
         if not tag:
@@ -145,12 +147,11 @@ def _attach_wml(html, path, wml, strict):
         # open tags mean it is `self-closing`
         open = tag in OPEN_TAGS
 
-        
         shard = deconstructed[index]
         attribute = selector.attribute
         i = _lfind(shard, ">")  # element scope
         l = (delimiter != attribute) or len('="')
-        
+
         # perform this if tag is known,
         # but is not the delimiter for sharding
         if selector.tag and attribute and delimiter != attribute:
@@ -162,7 +163,7 @@ def _attach_wml(html, path, wml, strict):
                 index += 1
                 continue
             l = x + len(attribute + '="')
-        
+
         # perform this to check if value
         # is present in the attribute value/s
         # else skip to the next shard
@@ -172,12 +173,12 @@ def _attach_wml(html, path, wml, strict):
             if selector.value not in values:
                 index += 1
                 continue
-            logging.debug(f" 2: {selector.value=} in \"" + shard[l : l + r] + "\" OK")
-        
+            logging.debug(f' 2: {selector.value=} in "' + shard[l : l + r] + '" OK')
+
         if not append:
             # this extends or add more attributes
             # to the element as defined by the selector
-            i -= int(open) # this moves the index before the ">" character
+            i -= int(open)  # this moves the index before the ">" character
             deconstructed[index] = shard[:i] + " " + decoded + shard[i:]
             if attribute == "#id":
                 break
@@ -185,7 +186,7 @@ def _attach_wml(html, path, wml, strict):
             # with having the same class name
             index += 1
             continue
-        
+
         # perform this if element is open
         # but must append new element after it
         logging.debug(f" 3: {tag=}, {open=}")
@@ -198,7 +199,7 @@ def _attach_wml(html, path, wml, strict):
             # with having the same class name
             index += 1
             continue
-        
+
         # loop to the next shards
         # append before closing tag
         skips = 0
@@ -213,19 +214,19 @@ def _attach_wml(html, path, wml, strict):
             r = _lfind(shard, closing, False)
             if r == -1:
                 continue
-            
+
             next = False
             # count children having the same tag
             # and skip though all children
             logging.debug(f" 5: {skips=}\n - " + shard[r:])
             for _ in range(skips):
                 skips -= 1
-                temp = _lfind(shard[r+offset:], closing, False)
+                temp = _lfind(shard[r + offset :], closing, False)
                 if temp == -1:
                     next = True
                     break
                 # adjust offset after skipping
-                r +=  temp + offset
+                r += temp + offset
                 logging.debug("\t- " + shard[r:])
             if next:
                 continue
@@ -247,7 +248,7 @@ def _find_matches(html, path):
 
     selector = PathParser(path)
     delimiter = selector.delimiter()
-    
+
     logging.debug("\n## " + selector.delimiter())
     logging.debug(f" 1: {selector.tag=}, {delimiter=}, != {selector.attribute=}")
 
@@ -257,7 +258,7 @@ def _find_matches(html, path):
     while 1:
         if total <= index:
             break
-        
+
         # set or find tag of selector
         tag = selector.tag
         if not tag:
@@ -267,12 +268,12 @@ def _find_matches(html, path):
             tag = previous[l + 2 : l + r]
         # open tags mean it is `self-closing`
         open = tag in OPEN_TAGS
-        
+
         shard = deconstructed[index]
         attribute = selector.attribute
         i = _lfind(shard, ">")  # element scope
         l = (delimiter != attribute) or len('="')
-        
+
         # perform this if tag is known,
         # but is not the delimiter for sharding
         if selector.tag and attribute and delimiter != attribute:
@@ -284,7 +285,7 @@ def _find_matches(html, path):
                 index += 1
                 continue
             l = x + len(attribute + '="')
-        
+
         # perform this to check if value
         # is present in the attribute value/s
         # else skip to the next shard
@@ -294,7 +295,7 @@ def _find_matches(html, path):
             if selector.value not in values:
                 index += 1
                 continue
-            logging.debug(f" 2: {selector.value=} in \"" + shard[l : l + r] + "\" OK")
+            logging.debug(f' 2: {selector.value=} in "' + shard[l : l + r] + '" OK')
 
         # get the bounding tokens
         # of the deconstructed element
@@ -311,13 +312,13 @@ def _find_matches(html, path):
             closing = "</#" + tag + ">"
             r = _lfind(shard, closing)
             parts.append(shard[: r + len(closing)])
-        
+
         formatted = " ".join(parts).replace("<#", "<")
         formatted = formatted.replace("</#", "</")
         formatted = formatted.replace("#id=", "id=")
         formatted = formatted.replace("#class=", "class=")
         matches.append(formatted)
-        
+
         if selector.attribute == "id":
             break
         index += 1
@@ -400,7 +401,7 @@ def _decode_wml(wml, strict):
             # note that the order will be mixed
             classes = " ".join(value)
             value = " ".join(list(set(classes.split(" "))))
-        
+
         if name in ("id", "class"):
             name = f"#{name}"
 
